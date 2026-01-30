@@ -731,12 +731,12 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
   const persisted = persistCache.get<MarketOverview>(cacheKey)
   
   // [WHAT] 非交易时间直接返回持久化缓存
-  // [DEBUG] 临时禁用缓存检查，强制获取新数据
-  // if (!isTradingTime() && persisted && persisted.totalUp > 0) {
-  //   cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
-  //   return persisted
-  // }
-  console.log('[MarketOverview] 开始获取数据, 交易时间:', isTradingTime(), '有缓存:', !!persisted)
+  if (!isTradingTime() && persisted && persisted.totalUp > 0) {
+    console.log('[MarketOverview] 非交易时间，使用缓存数据')
+    cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
+    return persisted
+  }
+  console.log('[MarketOverview] 开始获取数据, 交易时间:', isTradingTime())
   
   // [WHAT] 固定的区间分布
   // [NOTE] 使用 -0.001 作为边界，避免 change=0 被错误分类
@@ -783,28 +783,16 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
           let totalDown = 0
           
           if (rankData?.datas && Array.isArray(rankData.datas)) {
-            // [DEBUG] 打印第一条数据看格式
-            if (rankData.datas.length > 0) {
-              console.log('[MarketOverview] 数据示例:', rankData.datas[0])
-              console.log('[MarketOverview] 数据总数:', rankData.datas.length)
-            }
-            
-            rankData.datas.forEach((row: string, idx: number) => {
+            rankData.datas.forEach((row: string) => {
               const cols = row.split(',')
               // [WHAT] 天天基金 rankhandler 数据格式：
               // 0:基金代码, 1:基金名称, 2:字母缩写, 3:日期, 4:单位净值, 5:累计净值, 
               // 6:日涨幅, 7:近1周, 8:近1月, 9:近3月, 10:近6月, 11:近1年...
-              // [NOTE] 日涨幅在第6列（索引为6）
               let change = parseFloat(cols[6] ?? '0')
               
               // [EDGE] 如果第6列不是有效数字，尝试其他可能的列
               if (isNaN(change) || cols[6] === '') {
                 change = parseFloat(cols[4] ?? '0') || parseFloat(cols[5] ?? '0') || 0
-              }
-              
-              // [DEBUG] 打印负数数据
-              if (change < 0 && idx < 10) {
-                console.log('[MarketOverview] 下跌基金:', cols[0], cols[1], 'change:', change)
               }
               
               if (change > 0) totalUp++
@@ -818,8 +806,6 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
                 }
               }
             })
-            
-            console.log('[MarketOverview] 统计结果: 上涨', totalUp, '下跌', totalDown)
           }
           
           
