@@ -1,6 +1,6 @@
 # 基金宝 Fund Helper
 
-一款开源的基金实时估值查看工具，支持 Web 和 Android 平台。
+一款开源的基金实时估值查看工具，专为 Android 平台打造。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Vue](https://img.shields.io/badge/Vue-3.x-brightgreen.svg)
