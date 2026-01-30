@@ -659,33 +659,13 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
     { range: '≥5', count: 0, min: 5, max: Infinity }
   ]
   
-  // [WHAT] 生成基于当前时间的模拟数据（当 API 失败时使用）
-  // [WHY] 移动端 WebView 可能无法执行 JSONP，需要降级方案
-  const generateFallbackData = (): MarketOverview => {
-    const now = new Date()
-    const hour = now.getHours()
-    const isMarketOpen = hour >= 9 && hour <= 15
-    
-    // [WHAT] 根据时间生成合理的随机分布
-    const baseUp = isMarketOpen ? 2500 + Math.floor(Math.random() * 1500) : 3000
-    const baseDown = isMarketOpen ? 1500 + Math.floor(Math.random() * 1000) : 2000
-    
-    return {
-      updateTime: `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-      totalUp: baseUp,
-      totalDown: baseDown,
-      distribution: [
-        { range: '≤-5', count: Math.floor(baseDown * 0.02), min: -Infinity, max: -5 },
-        { range: '-5~-3', count: Math.floor(baseDown * 0.05), min: -5, max: -3 },
-        { range: '-3~-1', count: Math.floor(baseDown * 0.15), min: -3, max: -1 },
-        { range: '-1~0', count: Math.floor(baseDown * 0.78), min: -1, max: 0 },
-        { range: '0~1', count: Math.floor(baseUp * 0.65), min: 0, max: 1 },
-        { range: '1~3', count: Math.floor(baseUp * 0.25), min: 1, max: 3 },
-        { range: '3~5', count: Math.floor(baseUp * 0.07), min: 3, max: 5 },
-        { range: '≥5', count: Math.floor(baseUp * 0.03), min: 5, max: Infinity }
-      ]
-    }
-  }
+  // [WHAT] 创建空数据（API 失败时返回）
+  const createEmptyData = (): MarketOverview => ({
+    updateTime: '--',
+    totalUp: 0,
+    totalDown: 0,
+    distribution: createRanges()
+  })
   
   const ranges = createRanges()
   
@@ -728,13 +708,6 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
             })
           }
           
-          // [EDGE] 如果没有获取到有效数据，使用模拟数据
-          if (totalUp === 0 && totalDown === 0) {
-            const fallback = generateFallbackData()
-            cache.set(cacheKey, fallback, CACHE_TTL.MARKET_INDEX)
-            safeResolve(fallback)
-            return
-          }
           
           const now = new Date()
           const result: MarketOverview = {
@@ -747,20 +720,14 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
           cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
           safeResolve(result)
         } catch {
-          // [WHY] 解析失败时使用模拟数据
-          const fallback = generateFallbackData()
-          cache.set(cacheKey, fallback, CACHE_TTL.MARKET_INDEX)
-          safeResolve(fallback)
+          safeResolve(createEmptyData())
         }
       }, 100)
     }
     
     script.onerror = () => {
       cleanup()
-      // [WHY] 脚本加载失败时使用模拟数据
-      const fallback = generateFallbackData()
-      cache.set(cacheKey, fallback, CACHE_TTL.MARKET_INDEX)
-      safeResolve(fallback)
+      safeResolve(createEmptyData())
     }
     
     function cleanup() {
@@ -774,12 +741,9 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
       if (!resolved) {
         resolved = true
         cleanup()
-        // [WHY] 超时时使用模拟数据
-        const fallback = generateFallbackData()
-        cache.set(cacheKey, fallback, CACHE_TTL.MARKET_INDEX)
-        resolve(fallback)
+        resolve(createEmptyData())
       }
-    }, 5000) // 缩短超时时间到5秒
+    }, 8000)
     
     // [WHAT] 包装 resolve 确保只调用一次
     const safeResolve = (data: MarketOverview) => {
