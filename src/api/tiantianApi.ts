@@ -877,7 +877,8 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
     }
     
     // [WHAT] 获取基金涨跌数据（场外开放式基金）
-    script.src = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=rzdf&st=desc&pi=1&pn=5000&dx=1&v=${Date.now()}`
+    // [NOTE] 使用 jsonpgz 回调，确保数据完整返回
+    script.src = `https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=all&rs=&gs=0&sc=zzf&st=desc&sd=2020-01-01&ed=${new Date().toISOString().slice(0,10)}&qdii=&tabSubtype=,,,,,&pi=1&pn=10000&dx=1&v=${Date.now()}`
     document.body.appendChild(script)
   })
 }
