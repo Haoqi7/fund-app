@@ -4,6 +4,83 @@
 
 import { cache, CACHE_TTL } from './cache'
 
+// ========== 交易时间和持久化缓存工具 ==========
+
+/**
+ * 判断当前是否在交易时间内
+ * [WHY] 开盘前使用缓存数据，开盘后获取实时数据
+ */
+export function isTradingTime(): boolean {
+  const now = new Date()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const day = now.getDay()
+  
+  // [WHAT] 周一到周五，9:30-15:00 为交易时间
+  const isWeekday = day >= 1 && day <= 5
+  const isMarketOpen = (hour > 9 || (hour === 9 && minute >= 30)) && hour < 15
+  
+  return isWeekday && isMarketOpen
+}
+
+/**
+ * 持久化缓存工具
+ * [WHY] 将数据保存到 localStorage，开盘前可以使用昨天的数据
+ */
+export const persistCache = {
+  get<T>(key: string): T | null {
+    try {
+      const data = localStorage.getItem(`fund_${key}`)
+      if (data) return JSON.parse(data)
+    } catch {}
+    return null
+  },
+  
+  set<T>(key: string, data: T): void {
+    try {
+      localStorage.setItem(`fund_${key}`, JSON.stringify(data))
+    } catch {}
+  }
+}
+
+/**
+ * 带持久化缓存的数据获取包装器
+ * [WHY] 统一处理：开盘前用缓存，开盘后获取新数据
+ */
+export async function fetchWithPersistCache<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  validator: (data: T) => boolean = () => true
+): Promise<T | null> {
+  // [WHAT] 检查内存缓存
+  const memCached = cache.get<T>(key)
+  if (memCached) return memCached
+  
+  // [WHAT] 获取持久化缓存
+  const persistCached = persistCache.get<T>(key)
+  
+  // [WHAT] 非交易时间直接返回持久化缓存
+  if (!isTradingTime() && persistCached && validator(persistCached)) {
+    cache.set(key, persistCached, CACHE_TTL.MARKET_INDEX)
+    return persistCached
+  }
+  
+  // [WHAT] 交易时间尝试获取新数据
+  try {
+    const data = await fetcher()
+    if (data && validator(data)) {
+      cache.set(key, data, CACHE_TTL.MARKET_INDEX)
+      persistCache.set(key, data)
+      return data
+    }
+    // [EDGE] 新数据无效，使用缓存
+    return persistCached
+  } catch {
+    // [EDGE] 请求失败，使用缓存
+    return persistCached
+  }
+}
+
 // ========== 类型定义 ==========
 
 // [WHAT] 基金排行项（增强版）
@@ -645,41 +722,18 @@ export interface MarketOverview {
  */
 export async function fetchMarketOverview(): Promise<MarketOverview> {
   const cacheKey = 'market_overview'
-  const persistKey = 'market_overview_persist' // 持久化缓存 key
   
   // [WHAT] 检查内存缓存
   const cached = cache.get<MarketOverview>(cacheKey)
   if (cached) return cached
   
-  // [WHAT] 检查是否在交易时间内（9:30-15:00）
-  const now = new Date()
-  const hour = now.getHours()
-  const minute = now.getMinutes()
-  const isMarketOpen = (hour > 9 || (hour === 9 && minute >= 30)) && hour < 15
-  const isWeekday = now.getDay() >= 1 && now.getDay() <= 5
-  const isTradingTime = isWeekday && isMarketOpen
+  // [WHAT] 获取持久化缓存
+  const persisted = persistCache.get<MarketOverview>(cacheKey)
   
-  // [WHAT] 读取持久化缓存
-  const getPersistCache = (): MarketOverview | null => {
-    try {
-      const data = localStorage.getItem(persistKey)
-      if (data) return JSON.parse(data)
-    } catch {}
-    return null
-  }
-  
-  // [WHAT] 保存持久化缓存
-  const setPersistCache = (data: MarketOverview) => {
-    try {
-      localStorage.setItem(persistKey, JSON.stringify(data))
-    } catch {}
-  }
-  
-  // [WHAT] 如果不是交易时间，直接返回持久化缓存
-  const persistCache = getPersistCache()
-  if (!isTradingTime && persistCache && persistCache.totalUp > 0) {
-    cache.set(cacheKey, persistCache, CACHE_TTL.MARKET_INDEX)
-    return persistCache
+  // [WHAT] 非交易时间直接返回持久化缓存
+  if (!isTradingTime() && persisted && persisted.totalUp > 0) {
+    cache.set(cacheKey, persisted, CACHE_TTL.MARKET_INDEX)
+    return persisted
   }
   
   // [WHAT] 固定的区间分布
@@ -766,22 +820,15 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
           // [WHAT] 只有获取到有效数据才保存
           if (totalUp > 0 || totalDown > 0) {
             cache.set(cacheKey, result, CACHE_TTL.MARKET_INDEX)
-            setPersistCache(result) // 保存到持久化缓存
+            persistCache.set(cacheKey, result)
             safeResolve(result)
           } else {
             // [EDGE] 数据无效，使用持久化缓存
-            const fallback = getPersistCache()
-            if (fallback) {
-              cache.set(cacheKey, fallback, CACHE_TTL.MARKET_INDEX)
-              safeResolve(fallback)
-            } else {
-              safeResolve(createEmptyData())
-            }
+            safeResolve(persisted || createEmptyData())
           }
         } catch {
           // [EDGE] 解析失败，使用持久化缓存
-          const fallback = getPersistCache()
-          safeResolve(fallback || createEmptyData())
+          safeResolve(persisted || createEmptyData())
         }
       }, 100)
     }
@@ -789,8 +836,7 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
     script.onerror = () => {
       cleanup()
       // [EDGE] 请求失败，使用持久化缓存
-      const fallback = getPersistCache()
-      safeResolve(fallback || createEmptyData())
+      safeResolve(persisted || createEmptyData())
     }
     
     function cleanup() {
@@ -805,8 +851,7 @@ export async function fetchMarketOverview(): Promise<MarketOverview> {
         resolved = true
         cleanup()
         // [EDGE] 超时时使用持久化缓存
-        const fallback = getPersistCache()
-        resolve(fallback || createEmptyData())
+        resolve(persisted || createEmptyData())
       }
     }, 8000)
     

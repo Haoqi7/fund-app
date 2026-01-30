@@ -3,6 +3,7 @@
 // [DEPS] 天天基金公开接口
 
 import { cache, CACHE_TTL } from './cache'
+import { isTradingTime, persistCache } from './tiantianApi'
 import type { FundEstimate, NetValueRecord } from '@/types/fund'
 
 // [WHAT] 清除指定基金的缓存数据
@@ -91,12 +92,23 @@ function initJsonpCallback() {
 
 /**
  * 获取基金实时估值（带缓存）
+ * [NOTE] 开盘前使用缓存数据，开盘后获取实时数据
  */
 export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
-  // 检查缓存
   const cacheKey = `estimate_${code}`
+  
+  // [WHAT] 检查内存缓存
   const cached = cache.get<FundEstimate>(cacheKey)
   if (cached) return Promise.resolve(cached)
+  
+  // [WHAT] 获取持久化缓存
+  const persisted = persistCache.get<FundEstimate>(cacheKey)
+  
+  // [WHAT] 非交易时间直接返回持久化缓存
+  if (!isTradingTime() && persisted) {
+    cache.set(cacheKey, persisted, CACHE_TTL.ESTIMATE)
+    return Promise.resolve(persisted)
+  }
   
   return withConcurrencyControl(() => {
     return new Promise((resolve, reject) => {
@@ -107,16 +119,23 @@ export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
         cleanup()
         const idx = pendingRequests.findIndex(r => r.code === code)
         if (idx !== -1) pendingRequests.splice(idx, 1)
-        reject(new Error(`超时: ${code}`))
+        // [EDGE] 超时时使用持久化缓存
+        if (persisted) resolve(persisted)
+        else reject(new Error(`超时: ${code}`))
       }, 8000)
       
       pendingRequests.push({
         code,
         resolve: (data) => {
           cache.set(cacheKey, data, CACHE_TTL.ESTIMATE)
+          persistCache.set(cacheKey, data) // 保存到持久化缓存
           resolve(data)
         },
-        reject,
+        reject: (err) => {
+          // [EDGE] 失败时使用持久化缓存
+          if (persisted) resolve(persisted)
+          else reject(err)
+        },
         timeout
       })
       
@@ -137,7 +156,9 @@ export function fetchFundEstimateFast(code: string): Promise<FundEstimate> {
           clearTimeout(pendingRequests[idx]!.timeout)
           pendingRequests.splice(idx, 1)
         }
-        reject(new Error(`失败: ${code}`))
+        // [EDGE] 失败时使用持久化缓存
+        if (persisted) resolve(persisted)
+        else reject(new Error(`失败: ${code}`))
       }
       script.onload = () => {
         console.log('[JSONP] 脚本加载成功:', code)
