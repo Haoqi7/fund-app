@@ -8,7 +8,7 @@
 export const APP_VERSION = '1.0.0'
 
 /** 应用名称 */
-export const APP_NAME = '基金助手'
+export const APP_NAME = '基金宝'
 
 /** 构建时间（由构建工具注入） */
 export const BUILD_TIME = __BUILD_TIME__ || new Date().toISOString()

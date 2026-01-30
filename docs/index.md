@@ -2,12 +2,12 @@
 layout: home
 
 hero:
-  name: 基金助手
+  name: 基金宝
   text: 开源的基金实时估值查看工具
   tagline: 实时估值 · 持仓管理 · K线走势 · 智能提醒
   image:
     src: /hero-image.png
-    alt: 基金助手
+    alt: 基金宝
   actions:
     - theme: brand
       text: 下载 APK

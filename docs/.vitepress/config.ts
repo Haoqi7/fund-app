@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: '基金助手',
+  title: '基金宝',
   description: '开源的基金实时估值查看工具',
   lang: 'zh-CN',
   

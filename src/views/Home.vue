@@ -255,7 +255,7 @@ function submitAlert() {
     <!-- 顶部搜索栏 -->
     <div class="top-header">
       <div class="header-left">
-        <span class="app-title">基金助手</span>
+        <span class="app-title">基金宝</span>
       </div>
       <div class="search-bar" @click="goToSearch">
         <van-icon name="search" size="16" />

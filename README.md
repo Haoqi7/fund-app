@@ -1,4 +1,4 @@
-# 基金助手 Fund Helper
+# 基金宝 Fund Helper
 
 一款开源的基金实时估值查看工具，支持 Web 和 Android 平台。
 
