@@ -47,8 +47,6 @@ interface IntradayPoint {
 const intradayData = ref<IntradayPoint[]>([])
 const baseValue = ref(0)
 
-// [WHAT] 昨日数据（用于当日模式显示参考线）
-const yesterdayData = ref<SimpleKLineData[]>([])
 
 // [WHAT] 时间周期配置（适配基金每日净值数据）
 const periods = [
@@ -228,17 +226,6 @@ async function loadData() {
     chartData.value = kline
     periodReturns.value = returns
     
-    // [WHAT] 提取近几日真实净值数据用于当日模式显示
-    // [WHY] 基金没有分时数据，使用真实历史净值
-    // [NOTE] kline 是时间正序（最旧在前，最新在后），需要取最后几条
-    if (kline.length >= 5) {
-      // [WHAT] 取最近5个交易日的真实净值（不包括今日，因为今日单独显示）
-      yesterdayData.value = kline.slice(-6, -1) // 取倒数第6到倒数第2条（排除最新的今日数据）
-    } else if (kline.length > 1) {
-      yesterdayData.value = kline.slice(0, -1) // 排除最新的今日数据
-    } else {
-      yesterdayData.value = []
-    }
     
     await nextTick()
     drawChart()
@@ -346,112 +333,14 @@ function drawChart() {
   const downColor = colors.downColor
   const lineColor = isUp ? upColor : downColor
   
-  // [WHY] 当日模式显示昨日+今日双曲线，其他模式显示历史曲线
+  // [WHY] 所有模式统一使用标准曲线图
   const chartBottom = mainHeight
   const firstValue = data[0]?.value || 0
   const lastValue = data[data.length - 1]?.value || 0
   const isOverallUp = lastValue >= firstValue
   
-  // ========== 当日模式：显示近期历史净值 + 今日估值 ==========
-  if (isIntradayMode.value && yesterdayData.value.length > 0) {
-    // [WHAT] 合并历史数据和今日数据
-    // yesterdayData 是近5日真实净值（时间正序）
-    const historyPoints = yesterdayData.value
-    const todayValue = props.realtimeValue || props.lastClose || (data[0]?.value || 0)
-    
-    // [WHAT] 计算所有数据的价格范围（包括历史和今日）
-    const allValues = [...historyPoints.map(p => p.value), todayValue].filter(v => v > 0)
-    const historyMin = Math.min(...allValues)
-    const historyMax = Math.max(...allValues)
-    const historyRange = (historyMax - historyMin) || 1
-    const historyMargin = historyRange * 0.1
-    const adjustedMin = historyMin - historyMargin
-    const adjustedMax = historyMax + historyMargin
-    const adjustedRange = adjustedMax - adjustedMin
-    
-    // [WHAT] 绘制历史净值曲线（灰色虚线）
-    ctx.beginPath()
-    ctx.setLineDash([4, 4])
-    const totalPoints = historyPoints.length + 1 // 历史 + 今日
-    
-    historyPoints.forEach((point, i) => {
-      const x = padding.left + (chartWidth / totalPoints) * i
-      const y = padding.top + (mainHeight - padding.top) * (1 - (point.value - adjustedMin) / adjustedRange)
-      if (i === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
-    })
-    ctx.strokeStyle = colors.textSecondary
-    ctx.lineWidth = 1.5
-    ctx.stroke()
-    ctx.setLineDash([])
-    
-    // [WHAT] 绘制历史数据点和日期标签
-    ctx.fillStyle = colors.textSecondary
-    ctx.font = '9px Arial'
-    ctx.textAlign = 'center'
-    
-    historyPoints.forEach((point, i) => {
-      const x = padding.left + (chartWidth / totalPoints) * i
-      const y = padding.top + (mainHeight - padding.top) * (1 - (point.value - adjustedMin) / adjustedRange)
-      
-      // 绘制数据点
-      ctx.beginPath()
-      ctx.arc(x, y, 3, 0, Math.PI * 2)
-      ctx.fillStyle = colors.textSecondary
-      ctx.fill()
-      
-      // 绘制日期标签
-      const parts = point.time.split('-')
-      const label = parts.length >= 3 ? `${parts[1]}-${parts[2]}` : ''
-      ctx.fillStyle = colors.textSecondary
-      ctx.fillText(label, x, height - 5)
-    })
-    
-    // [WHAT] 绘制今日数据点（当前估值）
-    const todayX = padding.left + (chartWidth / totalPoints) * historyPoints.length
-    const todayY = padding.top + (mainHeight - padding.top) * (1 - (todayValue - adjustedMin) / adjustedRange)
-    
-    // 连接历史最后一点到今日
-    if (historyPoints.length > 0) {
-      const lastHistoryPoint = historyPoints[historyPoints.length - 1]!
-      const lastX = padding.left + (chartWidth / totalPoints) * (historyPoints.length - 1)
-      const lastY = padding.top + (mainHeight - padding.top) * (1 - (lastHistoryPoint.value - adjustedMin) / adjustedRange)
-      
-      ctx.beginPath()
-      ctx.moveTo(lastX, lastY)
-      ctx.lineTo(todayX, todayY)
-      ctx.strokeStyle = isOverallUp ? upColor : downColor
-      ctx.lineWidth = 2
-      ctx.stroke()
-    }
-    
-    // 今日最新点动画
-    const pulseSize = 4 + Math.sin(Date.now() / 200) * 2
-    ctx.beginPath()
-    ctx.arc(todayX, todayY, pulseSize, 0, Math.PI * 2)
-    ctx.fillStyle = isOverallUp ? upColor : downColor
-    ctx.fill()
-    
-    ctx.beginPath()
-    ctx.arc(todayX, todayY, pulseSize + 4, 0, Math.PI * 2)
-    ctx.strokeStyle = isOverallUp ? upColor : downColor
-    ctx.lineWidth = 1
-    ctx.globalAlpha = 0.4
-    ctx.stroke()
-    ctx.globalAlpha = 1
-    
-    // 今日日期标签
-    const now = new Date()
-    const todayLabel = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    ctx.fillStyle = isOverallUp ? upColor : downColor
-    ctx.font = '10px Arial'
-    ctx.fillText(todayLabel, todayX, height - 5)
-    
-    // 今日净值标签
-    ctx.fillText(todayValue.toFixed(4), todayX, todayY - 10)
-    
-  } else {
-    // ========== 非当日模式：标准曲线图 ==========
+  // ========== 统一曲线绘制 ==========
+  {
     
     // 绘制填充区域（曲线下方到底部）
     ctx.beginPath()
@@ -517,24 +406,21 @@ function drawChart() {
   }
   
   // ========== 绘制X轴时间标签 ==========
-  // [WHY] 当日模式的标签已在上面绘制
-  if (!isIntradayMode.value || yesterdayData.value.length === 0) {
-    ctx.fillStyle = colors.textSecondary
-    ctx.font = '10px Arial'
-    ctx.textAlign = 'center'
+  ctx.fillStyle = colors.textSecondary
+  ctx.font = '10px Arial'
+  ctx.textAlign = 'center'
+  
+  const labelCount = Math.min(5, data.length)
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.floor((data.length - 1) * i / Math.max(labelCount - 1, 1))
+    const point = data[idx]
+    if (!point) continue
+    const x = padding.left + (chartWidth / Math.max(data.length - 1, 1)) * idx
     
-    const labelCount = Math.min(5, data.length)
-    for (let i = 0; i < labelCount; i++) {
-      const idx = Math.floor((data.length - 1) * i / Math.max(labelCount - 1, 1))
-      const point = data[idx]
-      if (!point) continue
-      const x = padding.left + (chartWidth / Math.max(data.length - 1, 1)) * idx
-      
-      // [WHAT] 显示时间标签
-      const parts = point.time.split('-')
-      const label = parts.length >= 3 ? `${parts[1]}-${parts[2]}` : point.time.slice(-5)
-      ctx.fillText(label, x, height - 5)
-    }
+    // [WHAT] 显示时间标签
+    const parts = point.time.split('-')
+    const label = parts.length >= 3 ? `${parts[1]}-${parts[2]}` : point.time.slice(-5)
+    ctx.fillText(label, x, height - 5)
   }
 }
 
