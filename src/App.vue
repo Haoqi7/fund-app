@@ -14,38 +14,39 @@ const router = useRouter()
 let lastBackTime = 0
 let backButtonHandler: ((e: any) => void) | null = null
 
-onMounted(async () => {
-  // [WHAT] 动态导入 Capacitor App 插件（如果可用）
-  try {
-    const { App: CapApp } = await import('@capacitor/app')
+onMounted(() => {
+  // [WHAT] 仅在 Capacitor 原生环境下处理返回键
+  // [WHY] Web 环境不需要处理
+  const Capacitor = (window as any).Capacitor
+  if (!Capacitor?.isNativePlatform?.()) return
+  
+  // [WHAT] 使用 Capacitor 全局对象注册返回键监听
+  // [WHY] 避免导入 @capacitor/app 模块（Web 环境可能未安装）
+  const plugins = Capacitor.Plugins
+  if (!plugins?.App) return
+  
+  plugins.App.addListener('backButton', () => {
+    // [WHY] 如果不在主页，正常返回上一页
+    const mainPages = ['home', 'market', 'holding', 'analysis']
+    const isMainPage = mainPages.includes(route.name as string)
     
-    // [WHAT] 监听 Capacitor 返回键事件
-    await CapApp.addListener('backButton', ({ canGoBack }) => {
-      // [WHY] 如果不在主页，正常返回上一页
-      const mainPages = ['home', 'market', 'holding', 'analysis']
-      const isMainPage = mainPages.includes(route.name as string)
-      
-      if (!isMainPage && window.history.length > 1) {
-        router.back()
-        return
-      }
-      
-      // [WHY] 在主页时，双击退出
-      const now = Date.now()
-      if (now - lastBackTime < 2000) {
-        // 2秒内双击返回键，退出应用
-        CapApp.exitApp()
-      } else {
-        lastBackTime = now
-        showToast('再按一次退出应用')
-      }
-    })
+    if (!isMainPage && window.history.length > 1) {
+      router.back()
+      return
+    }
     
-    backButtonHandler = () => CapApp.removeAllListeners()
-  } catch {
-    // [EDGE] Web 环境或 Capacitor 未安装，忽略
-    console.log('Capacitor App plugin not available')
-  }
+    // [WHY] 在主页时，双击退出
+    const now = Date.now()
+    if (now - lastBackTime < 2000) {
+      // 2秒内双击返回键，退出应用
+      plugins.App.exitApp()
+    } else {
+      lastBackTime = now
+      showToast('再按一次退出应用')
+    }
+  })
+  
+  backButtonHandler = () => plugins.App.removeAllListeners()
 })
 
 onUnmounted(() => {
