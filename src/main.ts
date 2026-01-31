@@ -14,7 +14,8 @@ import './style.css'
 
 // [WHY] 导入主题CSS变量
 import './styles/theme.css'
-
+// [NEW] 导入 PC 适配样式
+import './styles/pc-adapter.css'
 const pinia = createPinia()
 const app = createApp(App)
 

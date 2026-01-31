@@ -1,0 +1,63 @@
+/* src/styles/pc-adapter.css */
+
+/* 仅在屏幕宽度大于 500px 时生效 */
+@media screen and (min-width: 500px) {
+  /* 1. 浏览器背景 */
+  body {
+    background-color: #f0f2f5; /* 灰色背景衬托 */
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+  }
+
+  /* 2. 应用容器限制 */
+  #app {
+    width: 100%;
+    max-width: 480px; /* 模拟手机宽度 */
+    background-color: var(--van-background-2, #fff); /* 确保应用有背景色 */
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1); /* 增加立体感 */
+    position: relative;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* 3. 修正 Vant 固定定位组件 (Fixed Elements) */
+  /* 顶部导航栏、底部标签栏、提交栏 */
+  .van-nav-bar--fixed,
+  .van-tabbar--fixed,
+  .van-submit-bar {
+    width: 100%;
+    max-width: 480px; /* 宽度跟随容器 */
+    left: 50% !important; /* 强制居中 */
+    transform: translateX(-50%) !important; /* 通过位移修正位置 */
+    right: auto !important;
+  }
+
+  /* 4. 修正底部弹窗 (Popups/ActionSheets) */
+  .van-popup--bottom,
+  .van-action-sheet,
+  .van-share-sheet,
+  .van-number-keyboard {
+    width: 100%;
+    max-width: 480px;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+  }
+  
+  /* 5. 修正居中弹窗 (Center Popups) */
+  /* 避免被上面的 transform 覆盖，保持默认居中逻辑 */
+  .van-popup--center {
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  /* 6. 隐藏 PC 端不需要的滚动条样式（可选，美化体验） */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+  }
+}
