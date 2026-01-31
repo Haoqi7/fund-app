@@ -1,64 +1,72 @@
-name: Deploy to GitHub Pages
+name: Docker Build and Publish
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  release:
+    types: [published]
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: 'pages'
-  cancel-in-progress: true
+env:
+  REGISTRY: ghcr.io
+  # 注意：这里不再直接定义 IMAGE_NAME，而是在 steps 中动态定义并转为小写
 
 jobs:
-  build:
+  build-and-push-image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # 安装 VitePress 并构建官网
-      - name: Install VitePress
-        run: npm install -D vitepress
-
-      - name: Build Docs
-        run: npx vitepress build docs
-
-      # 准备部署：官网 + 公告配置
-      - name: Prepare deployment
+      # [FIX] 新增步骤：将仓库名转换为全小写
+      # GitHub 的 repository 变量包含大写 (Haoqi7/fund-app)，但 Docker 要求必须全小写
+      - name: Lowercase Image Name
         run: |
-          mkdir -p deploy
-          cp -r docs/.vitepress/dist/* deploy/
-          cp -r public/config deploy/
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
         with:
-          path: './deploy'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # 使用转换后的小写变量
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      # 1. 构建并推送到镜像仓库
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # 2. 导出镜像为本地文件
+      - name: Export Docker image to file
+        run: |
+          # 构造完整的镜像 Tag (确保使用小写变量)
+          FULL_IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          
+          echo "Pulling image: $FULL_IMAGE_TAG"
+          docker pull "$FULL_IMAGE_TAG"
+          
+          # 导出并压缩
+          FILENAME="fund-app-${{ steps.meta.outputs.version }}.tar.gz"
+          docker save "$FULL_IMAGE_TAG" | gzip > "$FILENAME"
+
+      # 3. 将文件上传到 Release 页面
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: fund-app-${{ steps.meta.outputs.version }}.tar.gz
