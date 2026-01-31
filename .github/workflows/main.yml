@@ -1,11 +1,9 @@
 name: Docker Build and Publish
 
-# [WHAT] 触发条件：当发布新的 Release 时触发
 on:
   release:
     types: [published]
 
-# [WHY] 定义全局变量，使用 GitHub 原生容器仓库
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -13,16 +11,14 @@ env:
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
-    # [IMPORTANT] 需要写入 Packages 的权限
     permissions:
-      contents: read
-      packages: write
+      contents: write # [IMPORTANT] 需要写入 Release 附件的权限
+      packages: write # 需要推送到 ghcr 的权限
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # [WHAT] 登录 GitHub Container Registry
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -30,7 +26,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # [WHAT] 自动生成 Docker 标签（latest 和 版本号）
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -40,7 +35,7 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
 
-      # [WHAT] 构建并推送到仓库
+      # 1. 构建并推送到镜像仓库 (常规方式)
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -48,3 +43,19 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # 2. 导出镜像为本地文件 (为了方便下载)
+      - name: Export Docker image to file
+        run: |
+          # 拉取刚才构建好的镜像
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          
+          # 导出并压缩 (文件名例如: fund-app-v1.0.0.tar.gz)
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} | gzip > fund-app-${{ steps.meta.outputs.version }}.tar.gz
+
+      # 3. 将文件上传到 Release 页面
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: fund-app-${{ steps.meta.outputs.version }}.tar.gz
